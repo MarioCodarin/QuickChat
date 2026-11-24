@@ -9,6 +9,10 @@
   Works with any OpenAI-compatible endpoint. Native, ~1.4 MB, no Electron.
 </p>
 
+<p align="center">
+  <img src="docs/screenshot.png" width="680" alt="QuickChat answering a question in its floating panel">
+</p>
+
 ---
 
 Press **⌥Space** from anywhere, type, hit **⏎**, read the answer as it streams in, press **Esc**. That's the whole app.
