@@ -62,7 +62,7 @@ On first launch the panel opens on the settings screen. Paste a config like this
 }
 ```
 
-Then paste your API key into the endpoint's key field. Comments and trailing commas are fine, and so is pasting just the `provider` part. Prefer a form? **Add manually** takes a name, base URL, key and a comma-separated list of model IDs (so `http://localhost:11434/v1` for Ollama works too).
+Then paste your API key into the endpoint's key field. Comments and trailing commas are fine, and so is pasting just the `provider` part. Prefer a form? **Add manually** takes a name, base URL, key and a comma-separated list of model IDs (so `http://localhost:11434/v1` for Ollama works too). Plain `http://` is only allowed for localhost, LAN and `.local` addresses; anything remote must be `https://`.
 
 QuickChat calls `POST {baseURL}/chat/completions` with `stream: true`. If you pick an effort level, it sends it as `reasoning_effort`.
 
@@ -93,6 +93,7 @@ Only the current conversation is kept in memory. Closing the app forgets it.
 
 ```sh
 swift run selftest          # config import, streaming parser, store (no Xcode needed)
+REFUSELESS_API_KEY=… swift run selftest   # also exercises the live Refuseless endpoint (key is read from the env, never stored)
 ./scripts/build.sh          # release build + QuickChat.app
 ./scripts/make-icon.sh      # re-render the icon from Resources/icon.svg (needs librsvg)
 ```

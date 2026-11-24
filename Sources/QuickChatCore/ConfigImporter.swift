@@ -20,7 +20,7 @@ public enum ImportError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidJSON: return "That doesn't look like valid JSON."
-        case .noProviders: return "No provider with a baseURL was found."
+        case .noProviders: return "No provider with a baseURL and at least one model was found."
         }
     }
 }
@@ -55,6 +55,7 @@ public enum ConfigImporter {
 
             let name = (dict["name"] as? String) ?? key
             let models = parseModels(dict["models"] as? [String: Any] ?? [:])
+            guard !models.isEmpty else { continue }       // nothing to chat with
             var apiKey = options["apiKey"] as? String
             if let k = apiKey, k.hasPrefix("{env:") || k.hasPrefix("{file:") { apiKey = nil }
 
@@ -93,8 +94,12 @@ public enum ConfigImporter {
         }
     }
 
-    /// Removes `//` and `/* */` comments and trailing commas, leaving string contents untouched.
+    /// Removes `//` and `/* */` comments, then trailing commas, leaving string contents untouched.
     static func stripJSONC(_ input: String) -> String {
+        removeTrailingCommas(removeComments(input))
+    }
+
+    private static func removeComments(_ input: String) -> String {
         let chars = Array(input)
         var out: [Character] = []
         var i = 0
@@ -119,6 +124,27 @@ public enum ConfigImporter {
                 i += 2
                 continue
             }
+            out.append(c)
+            i += 1
+        }
+        return String(out)
+    }
+
+    private static func removeTrailingCommas(_ input: String) -> String {
+        let chars = Array(input)
+        var out: [Character] = []
+        var i = 0
+        var inString = false
+        while i < chars.count {
+            let c = chars[i]
+            if inString {
+                out.append(c)
+                if c == "\\", i + 1 < chars.count { out.append(chars[i + 1]); i += 2; continue }
+                if c == "\"" { inString = false }
+                i += 1
+                continue
+            }
+            if c == "\"" { inString = true }
             if c == "," {
                 var j = i + 1
                 while j < chars.count, chars[j].isWhitespace { j += 1 }

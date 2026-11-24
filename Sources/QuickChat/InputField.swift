@@ -52,7 +52,11 @@ struct InputField: NSViewRepresentable {
         let c = context.coordinator
         c.parent = self
         guard let tv = c.textView else { return }
-        if tv.string != text { tv.string = text; c.recomputeHeight() }
+        if tv.string != text {
+            tv.string = text
+            if text.isEmpty { tv.undoManager?.removeAllActions() }   // stale undo ranges after a submit
+            c.recomputeHeight()
+        }
         tv.insertionPointColor = NSColor(accent)
     }
 

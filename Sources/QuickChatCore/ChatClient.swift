@@ -39,9 +39,15 @@ public enum SSE {
 
     public static func parse(line raw: String) -> Line {
         let line = raw.trimmingCharacters(in: .whitespaces)
-        guard line.hasPrefix("data:") else { return .ignore }
-        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-        if payload == "[DONE]" { return .done }
+        let payload: String
+        if line.hasPrefix("data:") {
+            payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { return .done }
+        } else if line.hasPrefix("{") {
+            payload = line      // a server that ignored `stream: true` and answered with plain JSON
+        } else {
+            return .ignore
+        }
         guard let data = payload.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return .ignore }
@@ -51,7 +57,8 @@ public enum SSE {
         guard let choice = (obj["choices"] as? [[String: Any]])?.first else { return .ignore }
         let delta = (choice["delta"] as? [String: Any]) ?? (choice["message"] as? [String: Any]) ?? [:]
         var events: [StreamEvent] = []
-        if let r = (delta["reasoning_content"] as? String) ?? (delta["reasoning"] as? String), !r.isEmpty {
+        // Servers differ: `reasoning_content` or `reasoning`, and one may be present but empty.
+        if let r = [delta["reasoning_content"], delta["reasoning"]].compactMap({ $0 as? String }).first(where: { !$0.isEmpty }) {
             events.append(.reasoning(r))
         }
         if let c = delta["content"] as? String, !c.isEmpty {
@@ -68,6 +75,13 @@ public enum SSE {
     }
 
     public static func errorMessage(from body: Data) -> String? {
+        // A web page instead of JSON means a firewall, proxy or login wall sits in front of the API.
+        if let head = String(data: body.prefix(4096), encoding: .utf8)?.lowercased(),
+           head.contains("<html") || head.contains("<!doctype html") {
+            return head.contains("cloudflare")
+                ? "Blocked by a firewall (Cloudflare) before reaching the API"
+                : "The server returned a web page instead of an API response"
+        }
         guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
             let text = String(data: body, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (text?.isEmpty == false && text!.count < 300) ? text : nil
@@ -96,7 +110,9 @@ public enum ChatClient {
         req.timeoutInterval = 120
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        if let apiKey, !apiKey.isEmpty { req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        if let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty {
+            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         return req
     }
@@ -120,14 +136,19 @@ public enum ChatClient {
                         throw ChatError.http(http.statusCode, SSE.errorMessage(from: body))
                     }
 
+                    var sawEvent = false
                     for try await line in bytes.lines {
                         switch SSE.parse(line: line) {
-                        case .events(let events): events.forEach { continuation.yield($0) }
+                        case .events(let events):
+                            sawEvent = true
+                            events.forEach { continuation.yield($0) }
                         case .done: continuation.finish(); return
                         case .error(let message): throw ChatError.server(message)
                         case .ignore: break
                         }
                     }
+                    // A 200 that carried neither content nor [DONE] is a failure, not an empty answer.
+                    if !sawEvent { throw ChatError.server("The server returned an empty response.") }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

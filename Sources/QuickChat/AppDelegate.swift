@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey = HotKey(keyCode: kVK_Space, modifiers: optionKey) { [weak self] in
             DispatchQueue.main.async { self?.panels.toggle() }
         }
+        if hotKey == nil { statusItem.button?.toolTip = "QuickChat (⌥Space is unavailable: use this icon)" }
         // First launch with nothing configured: open the panel so there's something to see.
         if store.endpoints.isEmpty || CommandLine.arguments.contains("--show") { panels.show() }
     }

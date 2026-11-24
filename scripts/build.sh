@@ -56,8 +56,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>MIT License</string>
-  <!-- Endpoints are user-supplied; allow plain-http ones too (e.g. a local Ollama on http://localhost). -->
-  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+  <!-- https everywhere; plain http only for localhost / LAN / .local (e.g. Ollama on http://localhost:11434). -->
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
 </plist>
 PLIST

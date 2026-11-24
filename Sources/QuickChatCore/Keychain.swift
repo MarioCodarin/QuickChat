@@ -29,11 +29,19 @@ public final class SystemKeychain: KeyStoring {
     }
 
     public func setKey(_ value: String?, for account: String) {
-        SecItemDelete(query(account) as CFDictionary)
-        guard let value, !value.isEmpty, let data = value.data(using: .utf8) else { return }
-        var q = query(account)
-        q[kSecValueData as String] = data
-        SecItemAdd(q as CFDictionary, nil)
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmed, !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else {
+            SecItemDelete(query(account) as CFDictionary)
+            return
+        }
+        // Update in place so a failed write never destroys the previous working key.
+        let status = SecItemUpdate(query(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var q = query(account)
+            q[kSecValueData as String] = data
+            q[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+            SecItemAdd(q as CFDictionary, nil)
+        }
     }
 }
 

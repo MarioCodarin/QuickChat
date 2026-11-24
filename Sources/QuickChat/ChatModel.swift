@@ -14,16 +14,19 @@ final class ChatModel: ObservableObject {
     @Published private(set) var turns: [Turn] = []
     @Published private(set) var isStreaming = false
     private var task: Task<Void, Never>?
+    /// Bumped whenever a stream is started or cancelled, so a stale task can't touch newer state.
+    private var generation = 0
 
     func send(_ text: String, store: Store) {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isStreaming else { return }
 
-        turns.append(Turn(question: question))
-        let index = turns.count - 1
+        let turn = Turn(question: question)
+        turns.append(turn)
+        let turnID = turn.id
 
         guard let current = store.current else {
-            turns[index].error = "No model yet. Open settings (⌘,) and paste a config or add an endpoint."
+            update(turnID) { $0.error = "No model yet. Open settings (⌘,) and paste a config or add an endpoint." }
             return
         }
 
@@ -36,6 +39,8 @@ final class ChatModel: ObservableObject {
         messages.append(ChatMessage(role: "user", content: question))
 
         let apiKey = store.apiKey(for: current.endpoint.id)
+        generation += 1
+        let gen = generation
         isStreaming = true
         task = Task { [weak self] in
             do {
@@ -43,24 +48,31 @@ final class ChatModel: ObservableObject {
                                                model: current.model.id, effort: current.variant?.effort,
                                                messages: messages)
                 for try await event in stream {
-                    guard let self else { return }
+                    guard let self, self.generation == gen else { return }
                     switch event {
-                    case .content(let c): self.turns[index].answer += c
-                    case .reasoning(let r): self.turns[index].reasoning += r
+                    case .content(let c): self.update(turnID) { $0.answer += c }
+                    case .reasoning(let r): self.update(turnID) { $0.reasoning += r }
                     }
                 }
             } catch is CancellationError {
             } catch let error as URLError where error.code == .cancelled {
             } catch {
-                self?.turns[index].error = error.localizedDescription
+                self?.update(turnID) { $0.error = error.localizedDescription }
             }
-            self?.isStreaming = false
+            if let self, self.generation == gen { self.isStreaming = false }
         }
     }
 
     func stop() {
+        generation += 1
         task?.cancel()
         isStreaming = false
+    }
+
+    /// Looks the turn up by id: positions shift if the conversation is cleared mid-stream.
+    private func update(_ id: UUID, _ change: (inout Turn) -> Void) {
+        guard let i = turns.firstIndex(where: { $0.id == id }) else { return }
+        change(&turns[i])
     }
 
     func clear() {

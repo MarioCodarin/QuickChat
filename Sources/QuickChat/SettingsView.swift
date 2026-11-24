@@ -6,7 +6,7 @@ struct SettingsView: View {
     @ObservedObject var store: Store
     @ObservedObject var ui: PanelState
 
-    @State private var contentHeight: CGFloat = 0
+    @State private var contentHeight: CGFloat = 300
     @State private var pasted = ""
     @State private var importMessage: (text: String, ok: Bool)?
     @State private var manualName = ""
@@ -171,7 +171,7 @@ struct SettingsView: View {
         do {
             let n = try store.importConfig(pasted)
             pasted = ""
-            importMessage = ("Added \(n) endpoint\(n == 1 ? "" : "s"). Add your API key above.", true)
+            importMessage = ("Imported \(n) endpoint\(n == 1 ? "" : "s"). Make sure each has its API key.", true)
         } catch {
             importMessage = (error.localizedDescription, false)
         }
@@ -218,7 +218,10 @@ struct EndpointRow: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
         .onAppear { key = store.apiKey(for: endpoint.id) ?? ""; loaded = true }
-        .onChange(of: key) { new in if loaded { store.setAPIKey(new, for: endpoint.id) } }
+        .onChange(of: key) { new in
+            // Only write real edits: loading the stored value also fires onChange.
+            if loaded, new != (store.apiKey(for: endpoint.id) ?? "") { store.setAPIKey(new, for: endpoint.id) }
+        }
     }
 }
 

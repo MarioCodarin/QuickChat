@@ -29,6 +29,8 @@ final class FloatingPanel: NSPanel {
 @MainActor
 final class PanelState: ObservableObject {
     @Published var showSettings = false
+    /// Lives here (not in ChatView) so a draft survives a trip to settings and back.
+    @Published var input = ""
 }
 
 @MainActor
@@ -41,6 +43,7 @@ final class PanelController: NSObject {
     private var anchorTop: CGFloat = 0
     private var keyMonitor: Any?
     private var contentHeight: CGFloat = 120
+    private var maxHeight: CGFloat = 700
 
     init(store: Store) {
         self.store = store
@@ -70,7 +73,14 @@ final class PanelController: NSObject {
     func toggle() { isVisible ? hide() : show() }
 
     func show(settings: Bool = false) {
-        if store.endpoints.isEmpty || settings { ui.showSettings = true }
+        // Already open (e.g. "Open QuickChat" from the menu): just take focus, don't snap back or re-fade.
+        if panel.isVisible {
+            if settings { ui.showSettings = true }
+            panel.makeKey()
+            NotificationCenter.default.post(name: .quickChatFocusInput, object: nil)
+            return
+        }
+        ui.showSettings = settings || store.endpoints.isEmpty
         applyAppearance()
         position()
         panel.alphaValue = 0
@@ -95,6 +105,7 @@ final class PanelController: NSObject {
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
         let vf = screen.visibleFrame
         anchorTop = vf.maxY - vf.height * 0.2
+        maxHeight = max(200, anchorTop - vf.minY - 20)      // never run off the bottom of a small display
         let size = NSSize(width: Theme.width, height: contentHeight)
         panel.setFrame(NSRect(x: vf.midX - size.width / 2, y: anchorTop - size.height,
                               width: size.width, height: size.height), display: true)
@@ -104,7 +115,7 @@ final class PanelController: NSObject {
         guard h > 1 else { return }
         // Deferred: this fires during SwiftUI layout, and we're about to change the window size.
         DispatchQueue.main.async { [self] in
-            contentHeight = min(h, 700)
+            contentHeight = min(h, maxHeight)
             guard panel.isVisible, abs(panel.frame.height - contentHeight) > 0.5 else { return }
             var frame = panel.frame
             let top = frame.maxY                          // keep the top edge fixed, grow downwards
@@ -143,6 +154,8 @@ final class PanelController: NSObject {
             let cmd = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
             switch (event.keyCode, cmd) {
             case (53, _):                                  // Esc
+                // While an input method is composing, Esc belongs to it (cancel the marked text).
+                if (panel.firstResponder as? NSTextView)?.hasMarkedText() == true { return event }
                 if ui.showSettings, !store.endpoints.isEmpty { ui.showSettings = false } else { hide() }
                 return nil
             case (45, true):                               // ⌘N

@@ -177,5 +177,116 @@ await MainActor.run {
     } catch { check(false, "store threw \(error)") }
 }
 
+// MARK: Regression checks from code review
+
+section("review: SSE edge cases")
+eq(SSE.parse(line: #"data:{"choices":[{"delta":{"content":"x"}}]}"#), .events([.content("x")]), "data: without a space")
+eq(SSE.parse(line: #"data: {"choices":[{"delta":{"reasoning_content":"","reasoning":"r"}}]}"#), .events([.reasoning("r")]),
+   "empty reasoning_content falls back to reasoning")
+eq(SSE.parse(line: #"data: {"choices":[],"usage":{"total_tokens":3}}"#), .ignore, "usage-only chunk")
+eq(SSE.parse(line: #"data: {"choices":[{"delta":{"content":null}}]}"#), .ignore, "null content")
+eq(SSE.parse(line: #"{"choices":[{"message":{"content":"plain"}}]}"#), .events([.content("plain")]), "non-streamed JSON line")
+
+section("review: servers that don't stream")
+StubProtocol.status = 200
+StubProtocol.body = #"{"choices":[{"message":{"role":"assistant","content":"all at once"}}]}"#
+do {
+    let events = try await collect(ChatClient.stream(baseURL: "https://x/v1", apiKey: nil, model: "m", effort: nil,
+                                                     messages: [], session: stubSession))
+    eq(events, [.content("all at once")], "plain JSON completion is shown")
+} catch { check(false, "plain JSON threw \(error)") }
+
+StubProtocol.body = ""
+do {
+    _ = try await collect(ChatClient.stream(baseURL: "https://x/v1", apiKey: nil, model: "m", effort: nil,
+                                            messages: [], session: stubSession))
+    check(false, "empty 200 should throw")
+} catch { eq(error.localizedDescription, "The server returned an empty response.", "empty 200 is an error") }
+
+StubProtocol.body = #"{"error":{"message":"quota exceeded"}}"#
+do {
+    _ = try await collect(ChatClient.stream(baseURL: "https://x/v1", apiKey: nil, model: "m", effort: nil,
+                                            messages: [], session: stubSession))
+    check(false, "error body with 200 should throw")
+} catch { eq(error.localizedDescription, "quota exceeded", "error JSON inside a 200") }
+
+section("review: firewall page is not reported as a bad key")
+StubProtocol.status = 403
+StubProtocol.body = "<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body>Sorry, you have been blocked</body></html>"
+do {
+    _ = try await collect(ChatClient.stream(baseURL: "https://x/v1", apiKey: "k", model: "m", effort: nil,
+                                            messages: [], session: stubSession))
+    check(false, "403 should throw")
+} catch {
+    check(error.localizedDescription.contains("Cloudflare"), "message names the firewall: \(error.localizedDescription)")
+    check(!error.localizedDescription.contains("API key"), "does not blame the key")
+}
+
+section("review: importer edge cases")
+check((try? ConfigImporter.parse(#"{"provider":{"p":{"options":{"baseURL":"https://x/v1"}}}}"#)) == nil,
+      "provider without models is not imported")
+do {
+    let r = try ConfigImporter.parse("""
+    {"p": {"options": {"baseURL": "https://x/v1"}, "models": {"a": {},  // note
+      }}}
+    """)
+    eq(r.endpoints.first?.endpoint.models.first?.id, "a", "trailing comma followed by a comment")
+} catch { check(false, "comma+comment threw \(error)") }
+do {
+    let r = try ConfigImporter.parse(#"{"p":{"options":{"baseURL":"https://x/v1"},"models":{"m":{"name":"has // and /* in it"}}}}"#)
+    eq(r.endpoints.first?.endpoint.models.first?.name, "has // and /* in it", "comment markers inside strings survive")
+} catch { check(false, "string markers threw \(error)") }
+
+section("review: store dedupe and key trimming")
+await MainActor.run {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let keys = MemoryKeyStore()
+    let store = Store(directory: dir, defaults: UserDefaults(suiteName: UUID().uuidString)!, keys: keys)
+    do {
+        _ = try store.importConfig(fixture)
+        let id = store.endpoints[0].id
+        store.setAPIKey("  sk-abc\n", for: id)
+        eq(store.apiKey(for: id), "sk-abc", "key is trimmed")
+
+        _ = try store.importConfig(fixture)       // same config again
+        eq(store.endpoints.count, 1, "re-import does not duplicate")
+        eq(store.endpoints[0].id, id, "re-import keeps the endpoint id")
+        eq(store.apiKey(for: id), "sk-abc", "re-import keeps the API key")
+        eq(store.current?.endpoint.id, id, "selection still points at the endpoint")
+    } catch { check(false, "store review checks threw \(error)") }
+}
+
+// MARK: Live endpoint (optional)
+// Runs only when REFUSELESS_API_KEY is set, e.g.  REFUSELESS_API_KEY=... swift run selftest
+// The key is read from the environment and never stored.
+
+if let liveKey = ProcessInfo.processInfo.environment["REFUSELESS_API_KEY"], !liveKey.isEmpty {
+    section("live: Refuseless streaming through ChatClient")
+    do {
+        let endpoint = try ConfigImporter.parse(fixture).endpoints[0].endpoint
+        var content = "", reasoning = ""
+        for try await event in ChatClient.stream(baseURL: endpoint.baseURL, apiKey: liveKey,
+                                                 model: "glm-5.3-abliterated", effort: "low",
+                                                 messages: [ChatMessage(role: "user", content: "Hello")]) {
+            switch event {
+            case .content(let c): content += c
+            case .reasoning(let r): reasoning += r
+            }
+        }
+        print("  reasoning: \(reasoning.count) chars, answer: \"\(content.prefix(80))\"")
+        check(!content.isEmpty, "live answer is not empty")
+    } catch { check(false, "live stream threw \(error.localizedDescription)") }
+
+    section("live: bad key surfaces a readable error")
+    do {
+        for try await _ in ChatClient.stream(baseURL: "https://api.refuseless.com/v1", apiKey: "abl_invalid",
+                                             model: "glm-5.3-abliterated", effort: nil,
+                                             messages: [ChatMessage(role: "user", content: "Hello")]) {}
+        check(false, "bad key should have thrown")
+    } catch { print("  error shown to user: \(error.localizedDescription)"); check(true, "") }
+} else {
+    print("• live: skipped (set REFUSELESS_API_KEY to run)")
+}
+
 print(failures == 0 ? "\n✓ all \(checks) checks passed" : "\n✗ \(failures) of \(checks) checks failed")
 exit(failures == 0 ? 0 : 1)

@@ -36,12 +36,11 @@ struct ChatView: View {
     @ObservedObject var chat: ChatModel
     @ObservedObject var ui: PanelState
 
-    @State private var input = ""
     @State private var inputHeight: CGFloat = 30
     @State private var answerHeight: CGFloat = 0
 
     private var accent: Color { Theme.accent(store.accentID) }
-    private var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool { !ui.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     private var placeholder: String {
         let name = store.userName.trimmingCharacters(in: .whitespaces)
@@ -70,14 +69,14 @@ struct ChatView: View {
                 .frame(height: 30)
 
             ZStack(alignment: .topLeading) {
-                if input.isEmpty {
+                if ui.input.isEmpty {
                     Text(placeholder)
                         .font(.system(size: 20))
                         .foregroundStyle(.tertiary)
                         .padding(.top, 3)
                         .allowsHitTesting(false)
                 }
-                InputField(text: $input, height: $inputHeight, accent: accent, onSubmit: submit)
+                InputField(text: $ui.input, height: $inputHeight, accent: accent, onSubmit: submit)
             }
             .frame(height: inputHeight)
 
@@ -96,8 +95,8 @@ struct ChatView: View {
 
     private func submit() {
         guard canSend, !chat.isStreaming else { return }
-        let text = input
-        input = ""
+        let text = ui.input
+        ui.input = ""
         chat.send(text, store: store)
     }
 

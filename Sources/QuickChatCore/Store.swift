@@ -62,7 +62,7 @@ public final class Store: ObservableObject {
 
     public func add(_ endpoint: Endpoint, apiKey: String?) {
         endpoints.append(endpoint)
-        keys.setKey(apiKey, for: endpoint.id.uuidString)
+        keys.setKey(apiKey?.trimmingCharacters(in: .whitespacesAndNewlines), for: endpoint.id.uuidString)
         saveEndpoints()
         if current == nil, let m = endpoint.models.first {
             selection = Selection(endpointID: endpoint.id, modelID: m.id, variantID: nil)
@@ -76,25 +76,42 @@ public final class Store: ObservableObject {
         normalizeSelection()
     }
 
-    /// Imports an opencode-style config. Returns how many endpoints were added.
+    /// Imports an opencode-style config. Importing the same provider again (same name and base URL)
+    /// refreshes its models in place and keeps its id and API key. Returns how many endpoints were processed.
     @discardableResult
     public func importConfig(_ text: String) throws -> Int {
         let result = try ConfigImporter.parse(text)
-        for item in result.endpoints { add(item.endpoint, apiKey: item.apiKey) }
+
+        var resolvedID: [UUID: UUID] = [:]      // imported id -> id actually in the store
+        for item in result.endpoints {
+            let imported = item.endpoint
+            if let i = endpoints.firstIndex(where: { $0.baseURL == imported.baseURL && $0.name == imported.name }) {
+                endpoints[i].models = imported.models
+                resolvedID[imported.id] = endpoints[i].id
+                if let key = item.apiKey { setAPIKey(key, for: endpoints[i].id) }
+                saveEndpoints()
+            } else {
+                add(imported, apiKey: item.apiKey)
+                resolvedID[imported.id] = imported.id
+            }
+        }
+        normalizeSelection()                    // a refreshed model list may have dropped the selected model
 
         // Honour the config's default `model` ("providerKey/modelId").
         if let def = result.defaultModel, let slash = def.firstIndex(of: "/") {
             let providerKey = String(def[..<slash]), modelID = String(def[def.index(after: slash)...])
             if let item = result.endpoints.first(where: { result.providerKeys[$0.endpoint.id] == providerKey }),
-               item.endpoint.models.contains(where: { $0.id == modelID }) {
-                selection = Selection(endpointID: item.endpoint.id, modelID: modelID, variantID: nil)
+               let id = resolvedID[item.endpoint.id], item.endpoint.models.contains(where: { $0.id == modelID }) {
+                selection = Selection(endpointID: id, modelID: modelID, variantID: nil)
             }
         }
         return result.endpoints.count
     }
 
     public func apiKey(for id: UUID) -> String? { keys.key(for: id.uuidString) }
-    public func setAPIKey(_ value: String?, for id: UUID) { keys.setKey(value, for: id.uuidString) }
+    public func setAPIKey(_ value: String?, for id: UUID) {
+        keys.setKey(value?.trimmingCharacters(in: .whitespacesAndNewlines), for: id.uuidString)
+    }
 
     // MARK: Selection
 
