@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import SwiftUI
 import QuickChatCore
 
@@ -36,7 +35,7 @@ struct ChatView: View {
     @ObservedObject var chat: ChatModel
     @ObservedObject var ui: PanelState
 
-    @State private var inputHeight: CGFloat = 30
+    @State private var inputHeight: CGFloat = 32
     @State private var answerHeight: CGFloat = 0
 
     private var accent: Color { Theme.accent(store.accentID) }
@@ -63,17 +62,18 @@ struct ChatView: View {
 
     private var inputRow: some View {
         HStack(alignment: .top, spacing: 12) {
+            // The prompt chevron is this app's signature: it is also in the icon.
             Image(systemName: "chevron.right")
-                .font(.system(size: 15, weight: .bold))
+                .font(Typo.body.weight(.medium))
                 .foregroundStyle(accent)
-                .frame(height: 30)
+                .frame(width: 12, height: 32)
 
             ZStack(alignment: .topLeading) {
                 if ui.input.isEmpty {
                     Text(placeholder)
-                        .font(.system(size: 20))
+                        .font(Typo.input)
                         .foregroundStyle(.tertiary)
-                        .padding(.top, 3)
+                        .padding(.top, 4)
                         .allowsHitTesting(false)
                 }
                 InputField(text: $ui.input, height: $inputHeight, accent: accent, onSubmit: submit)
@@ -82,12 +82,13 @@ struct ChatView: View {
 
             Button(action: chat.isStreaming ? chat.stop : submit) {
                 Image(systemName: chat.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
-                    .font(.system(size: 26))
+                    .font(.system(size: 28))
                     .foregroundStyle(chat.isStreaming || canSend ? accent : Color.primary.opacity(0.15))
             }
             .buttonStyle(.plain)
-            .frame(height: 30)
+            .frame(height: 32)
             .disabled(!chat.isStreaming && !canSend)
+            .help(chat.isStreaming ? "Stop" : "Send")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -105,14 +106,15 @@ struct ChatView: View {
     private var answers: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(chat.turns) { turn in
                         TurnView(turn: turn, accent: accent,
                                  streaming: chat.isStreaming && turn.id == chat.turns.last?.id)
                     }
-                    Color.clear.frame(height: 1).id("bottom")
+                    // Scroll anchor; the negative inset cancels the stack spacing above it.
+                    Color.clear.frame(height: 1).id("bottom").padding(.top, -17)
                 }
-                .padding(.horizontal, 22)
+                .padding(.horizontal, 24)
                 .padding(.vertical, 16)
                 .readHeight { answerHeight = $0 }
             }
@@ -131,23 +133,19 @@ struct ChatView: View {
             Spacer()
             if !chat.turns.isEmpty {
                 Button { chat.clear() } label: {
-                    Label("New", systemImage: "plus").font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10).padding(.vertical, 5).surface(radius: 8)
+                    ControlLabel { Label("New", systemImage: "plus").labelStyle(.titleAndIcon) }
                 }
                 .buttonStyle(.plain)
                 .help("New chat (⌘N)")
             }
             Button { ui.showSettings = true } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(6).surface(radius: 8)
+                ControlLabel(width: 28) { Image(systemName: "gearshape") }
             }
             .buttonStyle(.plain)
             .help("Settings (⌘,)")
         }
-        .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
     }
 
     private var modelMenu: some View {
@@ -168,10 +166,11 @@ struct ChatView: View {
                 }
             }
         } label: {
-            Pill(icon: "cpu", text: store.current?.model.name ?? "No model")
+            Pill(text: store.current?.model.name ?? "No model")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .tint(Color(nsColor: .secondaryLabelColor))     // menus would otherwise paint their label in the accent
         .fixedSize()
     }
 
@@ -189,28 +188,13 @@ struct ChatView: View {
                     }
                 }
             } label: {
-                Pill(icon: "brain", text: current.variant?.id.capitalized ?? "Default")
+                Pill(text: current.variant?.id.capitalized ?? "Default")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            .tint(Color(nsColor: .secondaryLabelColor))
             .fixedSize()
         }
-    }
-}
-
-struct Pill: View {
-    let icon: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 11, weight: .medium))
-            Text(text).font(.system(size: 12, weight: .medium)).lineLimit(1)
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .surface(radius: 8)
     }
 }
 
@@ -224,47 +208,48 @@ struct TurnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(turn.question)
-                .font(.system(size: 13, weight: .medium))
+                .font(Typo.ui.weight(.medium))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
 
             if !turn.reasoning.isEmpty {
                 Button { showReasoning.toggle() } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: showReasoning ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .bold))
-                        Text(streaming && turn.answer.isEmpty ? "Thinking…" : "Thought process")
-                            .font(.system(size: 12))
+                        Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
+                            .font(Typo.meta.weight(.medium))
+                        Text(streaming && turn.answer.isEmpty ? "Thinking" : "Thought process")
+                            .font(Typo.meta)
                     }
                     .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
                 if showReasoning {
                     Text(turn.reasoning)
-                        .font(.system(size: 12))
+                        .font(Typo.ui)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                        .padding(.leading, 10)
-                        .overlay(alignment: .leading) { Rectangle().fill(accent.opacity(0.5)).frame(width: 2) }
+                        .padding(.leading, 12)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color.primary.opacity(0.15)).frame(width: 2) }
                 }
             }
 
             if let error = turn.error {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 13))
+                    .font(Typo.ui)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             } else if turn.answer.isEmpty {
-                if streaming && turn.reasoning.isEmpty { ThinkingDots(color: accent) }
+                if streaming && turn.reasoning.isEmpty { BlockCursor(color: accent) }
             } else {
                 Text(Self.markdown(turn.answer))
-                    .font(.system(size: 15))
-                    .lineSpacing(3)
+                    .font(Typo.body)
+                    .lineSpacing(4)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if !streaming {
                     Button { copy() } label: {
                         Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 11))
+                            .font(Typo.meta)
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
@@ -286,20 +271,5 @@ struct TurnView: View {
         let bulleted = s.replacingOccurrences(of: "(?m)^(\\s*)[-*] ", with: "$1• ", options: .regularExpression)
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: bulleted, options: options)) ?? AttributedString(bulleted)
-    }
-}
-
-struct ThinkingDots: View {
-    let color: Color
-    @State private var phase = 0
-    private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle().fill(color).frame(width: 6, height: 6).opacity(phase == i ? 1 : 0.25)
-            }
-        }
-        .onReceive(timer) { _ in phase = (phase + 1) % 3 }
     }
 }

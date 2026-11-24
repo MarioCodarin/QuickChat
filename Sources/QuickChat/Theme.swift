@@ -57,15 +57,3 @@ extension View {
             .onPreferenceChange(HeightKey.self, perform: onChange)
     }
 }
-
-/// A quiet rounded surface used for fields and pills.
-struct Surface: ViewModifier {
-    var radius: CGFloat = 10
-    func body(content: Content) -> some View {
-        content.background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.primary.opacity(0.07)))
-    }
-}
-
-extension View {
-    func surface(radius: CGFloat = 10) -> some View { modifier(Surface(radius: radius)) }
-}

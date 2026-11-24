@@ -13,15 +13,15 @@ public enum ChatError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .badURL: return "The endpoint URL is not valid."
-        case .badResponse: return "The server sent an unexpected response."
+        case .badURL: return "The endpoint URL is not valid"
+        case .badResponse: return "The server sent an unexpected response"
         case .http(let code, let msg):
             if let msg, !msg.isEmpty { return "\(msg) (HTTP \(code))" }
             switch code {
-            case 401, 403: return "The API key was rejected (HTTP \(code))."
-            case 404: return "Endpoint or model not found (HTTP 404)."
-            case 429: return "Rate limited (HTTP 429)."
-            default: return "The server returned HTTP \(code)."
+            case 401, 403: return "The API key was rejected (HTTP \(code))"
+            case 404: return "Endpoint or model not found (HTTP 404)"
+            case 429: return "Rate limited (HTTP 429)"
+            default: return "The server returned HTTP \(code)"
             }
         case .server(let msg): return msg
         }
@@ -148,7 +148,7 @@ public enum ChatClient {
                         }
                     }
                     // A 200 that carried neither content nor [DONE] is a failure, not an empty answer.
-                    if !sawEvent { throw ChatError.server("The server returned an empty response.") }
+                    if !sawEvent { throw ChatError.server("The server returned an empty response") }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

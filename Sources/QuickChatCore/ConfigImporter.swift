@@ -19,7 +19,7 @@ public enum ImportError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidJSON: return "That doesn't look like valid JSON."
+        case .invalidJSON: return "That doesn't look like valid JSON"
         case .noProviders: return "No provider with a baseURL and at least one model was found."
         }
     }
@@ -47,14 +47,14 @@ public enum ConfigImporter {
 
         var results: [ImportedEndpoint] = []
         var keys: [UUID: String] = [:]
-        for key in providers.keys.sorted() {
+        for key in inFileOrder(Array(providers.keys), in: cleaned) {
             guard let dict = providers[key] as? [String: Any], isProvider(dict),
                   let options = dict["options"] as? [String: Any],
                   let baseURL = options["baseURL"] as? String
             else { continue }
 
             let name = (dict["name"] as? String) ?? key
-            let models = parseModels(dict["models"] as? [String: Any] ?? [:])
+            let models = parseModels(dict["models"] as? [String: Any] ?? [:], order: cleaned)
             guard !models.isEmpty else { continue }       // nothing to chat with
             var apiKey = options["apiKey"] as? String
             if let k = apiKey, k.hasPrefix("{env:") || k.hasPrefix("{file:") { apiKey = nil }
@@ -74,8 +74,16 @@ public enum ConfigImporter {
 
     private static let effortOrder = ["off", "none", "minimal", "low", "medium", "high", "max", "xhigh"]
 
-    private static func parseModels(_ models: [String: Any]) -> [ModelSpec] {
-        models.keys.sorted().compactMap { id in
+    /// `JSONSerialization` returns dictionaries unordered; recover the order the keys have in the text.
+    private static func inFileOrder(_ keys: [String], in text: String) -> [String] {
+        func position(_ key: String) -> String.Index {
+            text.range(of: "\"\(key)\"")?.lowerBound ?? text.endIndex
+        }
+        return keys.sorted { (position($0), $0) < (position($1), $1) }
+    }
+
+    private static func parseModels(_ models: [String: Any], order text: String) -> [ModelSpec] {
+        inFileOrder(Array(models.keys), in: text).compactMap { id in
             guard let m = models[id] as? [String: Any] else { return nil }
             var variants: [Variant] = []
             if let vs = m["variants"] as? [String: Any] {

@@ -44,6 +44,7 @@ final class PanelController: NSObject {
     private var keyMonitor: Any?
     private var contentHeight: CGFloat = 120
     private var maxHeight: CGFloat = 700
+    private var resizeScheduled = false
 
     init(store: Store) {
         self.store = store
@@ -113,9 +114,12 @@ final class PanelController: NSObject {
 
     private func contentHeightChanged(_ h: CGFloat) {
         guard h > 1 else { return }
-        // Deferred: this fires during SwiftUI layout, and we're about to change the window size.
+        contentHeight = min(h, maxHeight)
+        // Deferred (we're inside SwiftUI layout) and coalesced: many tokens in one turn cause one window resize.
+        guard !resizeScheduled else { return }
+        resizeScheduled = true
         DispatchQueue.main.async { [self] in
-            contentHeight = min(h, maxHeight)
+            resizeScheduled = false
             guard panel.isVisible, abs(panel.frame.height - contentHeight) > 0.5 else { return }
             var frame = panel.frame
             let top = frame.maxY                          // keep the top edge fixed, grow downwards

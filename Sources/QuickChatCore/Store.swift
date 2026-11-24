@@ -131,7 +131,9 @@ public final class Store: ObservableObject {
 
     private func normalizeSelection() {
         if current == nil {
-            if let e = endpoints.first(where: { !$0.models.isEmpty }), let m = e.models.first {
+            // Prefer another model on the endpoint that was selected, then the first usable endpoint.
+            let same = endpoints.first { $0.id == selection.endpointID && !$0.models.isEmpty }
+            if let e = same ?? endpoints.first(where: { !$0.models.isEmpty }), let m = e.models.first {
                 selection = Selection(endpointID: e.id, modelID: m.id, variantID: nil)
             } else {
                 selection = Selection()

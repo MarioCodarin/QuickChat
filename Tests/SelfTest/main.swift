@@ -201,7 +201,7 @@ do {
     _ = try await collect(ChatClient.stream(baseURL: "https://x/v1", apiKey: nil, model: "m", effort: nil,
                                             messages: [], session: stubSession))
     check(false, "empty 200 should throw")
-} catch { eq(error.localizedDescription, "The server returned an empty response.", "empty 200 is an error") }
+} catch { eq(error.localizedDescription, "The server returned an empty response", "empty 200 is an error") }
 
 StubProtocol.body = #"{"error":{"message":"quota exceeded"}}"#
 do {
@@ -236,6 +236,31 @@ do {
     let r = try ConfigImporter.parse(#"{"p":{"options":{"baseURL":"https://x/v1"},"models":{"m":{"name":"has // and /* in it"}}}}"#)
     eq(r.endpoints.first?.endpoint.models.first?.name, "has // and /* in it", "comment markers inside strings survive")
 } catch { check(false, "string markers threw \(error)") }
+
+section("review: config order is kept")
+do {
+    let models = try ConfigImporter.parse(fixture).endpoints[0].endpoint.models.map(\.id)
+    eq(models.first, "glm-5.3-abliterated", "first model as in the file")
+    eq(models[1], "glm-5.3-flash-abliterated", "second model as in the file")
+    eq(models.last, "gemma-4-26b-storyteller", "last model as in the file")
+    let two = try ConfigImporter.parse(#"{"provider":{"zeta":{"options":{"baseURL":"https://z/v1"},"models":{"m":{}}},"alpha":{"options":{"baseURL":"https://a/v1"},"models":{"m":{}}}}}"#)
+    eq(two.endpoints.map(\.endpoint.baseURL), ["https://z/v1", "https://a/v1"], "providers in file order")
+} catch { check(false, "order checks threw \(error)") }
+
+section("review: fallback prefers the same endpoint")
+await MainActor.run {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = Store(directory: dir, defaults: UserDefaults(suiteName: UUID().uuidString)!, keys: MemoryKeyStore())
+    let a = Endpoint(name: "A", baseURL: "https://a/v1", models: [ModelSpec(id: "a1")])
+    let b = Endpoint(name: "B", baseURL: "https://b/v1", models: [ModelSpec(id: "b1"), ModelSpec(id: "b2")])
+    store.add(a, apiKey: nil); store.add(b, apiKey: nil)
+    store.select(endpoint: b, model: b.models[1])
+    // Re-importing B with its selected model gone should land on B's first model, not on A.
+    let config = #"{"provider":{"b":{"name":"B","options":{"baseURL":"https://b/v1"},"models":{"b9":{}}}}}"#
+    _ = try? store.importConfig(config)
+    eq(store.current?.endpoint.name, "B", "stays on the same endpoint")
+    eq(store.current?.model.id, "b9", "first model of that endpoint")
+}
 
 section("review: store dedupe and key trimming")
 await MainActor.run {

@@ -25,7 +25,7 @@ struct InputField: NSViewRepresentable {
         tv.allowsUndo = true
         tv.font = .systemFont(ofSize: 20, weight: .regular)
         tv.textColor = .labelColor
-        tv.textContainerInset = NSSize(width: 0, height: 3)
+        tv.textContainerInset = NSSize(width: 0, height: 4)
         tv.textContainer?.lineFragmentPadding = 0
         tv.textContainer?.widthTracksTextView = true
         tv.isVerticallyResizable = true
@@ -94,7 +94,7 @@ struct InputField: NSViewRepresentable {
             guard let tv = textView, let lm = tv.layoutManager, let tc = tv.textContainer else { return }
             lm.ensureLayout(for: tc)
             let h = ceil(lm.usedRect(for: tc).height + tv.textContainerInset.height * 2)
-            let clamped = min(max(h, 30), 150)
+            let clamped = min(max(h, 32), 152)
             if abs(parent.height - clamped) > 0.5 {
                 DispatchQueue.main.async { self.parent.height = clamped }
             }
